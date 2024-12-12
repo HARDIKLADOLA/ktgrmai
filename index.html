@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Data Table with Cascading Filters</title>
+    <link href="https://fonts.googleapis.com/css2?family=Helvetica:wght@300;400;600&amp;display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Helvetica', sans-serif;
+            background-color: #f7f9fc;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            font-weight: 600;
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .filter-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .filter-container label {
+            font-weight: 600;
+            margin-right: 10px;
+            color: #34495e;
+        }
+
+        input[type="date"],
+        select {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin: 10px 0;
+            width: 100%;
+            max-width: 320px;
+            transition: border 0.3s, box-shadow 0.3s;
+            font-size: 1em;
+        }
+
+        input[type="date"]:focus,
+        select:focus {
+            border-color: #3498db;
+            outline: none;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            background-color: #ffffff;
+            overflow: hidden;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+
+        tr:hover {
+            background-color: #eaeaea;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+        }
+
+        #google_translate_element {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .loader {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media screen and (min-width: 600px) {
+            .filter-container {
+                flex-direction: row;
+                justify-content: space-around;
+                flex-wrap: wrap;
+            }
+
+            input[type="date"],
+            select {
+                margin: 5px;
+                width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>CSV Data Table</h1>
+
+    <div id="google_translate_element"></div>
+
+    <div class="filter-container">
+        <label for="date-picker">Select a Date:</label>
+        <input type="date" id="date-picker">
+
+        <label for="state-filter">Filter by State:</label>
+        <select id="state-filter">
+            <option value="all">All States</option>
+        </select>
+
+        <label for="district-filter">Filter by District:</label>
+        <select id="district-filter" disabled="">
+            <option value="all">All Districts</option>
+        </select>
+
+        <label for="market-filter">Filter by Market:</label>
+        <select id="market-filter" disabled="">
+            <option value="all">All Markets</option>
+        </select>
+    </div>
+
+    <table id="data-table">
+        <thead>
+            <tr id="table-header"></tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+    </table>
+
+    <div class="loader" id="loader"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script>
+        function googleTranslateElementInit() {
+            new google.translate.TranslateElement({
+                pageLanguage: 'en',
+                includedLanguages: 'en,hi,gu,kn,ml,mr,pa,ta,te,bn,or,as,ks,ur,sd',
+                layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+                autoDisplay: false
+            }, 'google_translate_element');
+        }
+
+        function setDefaultLanguage() {
+            var interval = setInterval(function() {
+                if (typeof google !== "undefined" && google.translate) {
+                    var dropdown = document.querySelector('.goog-te-combo');
+                    if (dropdown) {
+                        dropdown.value = 'gu';
+                        dropdown.dispatchEvent(new Event('change'));
+                        clearInterval(interval);
+                    }
+                }
+            }, 100);
+        }
+
+        window.onload = function() {
+            setDefaultLanguage();
+        };
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const datePicker = document.getElementById('date-picker');
+            const stateFilter = document.getElementById('state-filter');
+            const districtFilter = document.getElementById('district-filter');
+            const marketFilter = document.getElementById('market-filter');
+            const tableHeader = document.getElementById('table-header');
+            const tableBody = document.getElementById('table-body');
+            const loader = document.getElementById('loader');
+
+            let originalData = [];
+            let filteredData = [];
+            let selectedState = 'all';
+            let selectedDistrict = 'all';
+            let selectedMarket = 'all';
+
+            function setYesterdayDate() {
+                const today = new Date();
+                today.setDate(today.getDate() - 1);
+                const yesterday = today.toISOString().split('T')[0];
+                datePicker.value = yesterday;
+                fetchCSVData(yesterday);
+            }
+
+            function formatDate(date) {
+                const d = new Date(date);
+                const day = ('0' + d.getDate()).slice(-2);
+                const month = ('0' + (d.getMonth() + 1)).slice(-2);
+                const year = d.getFullYear();
+                return `${day}/${month}/${year}`;
+            }
+
+            function fetchCSVData(date) {
+                const formattedDate = formatDate(date);
+                const csvUrl = `https://api.data.gov.in/resource/35985678-0d79-46b4-9ed6-6f13308a1d24?api-key=579b464db66ec23bdd0000017185aa4a01fb494e47104dff02edf1ba&format=csv&limit=20000&filters%5BArrival_Date%5D=${encodeURIComponent(formattedDate)}`;
+
+                loader.style.display = 'block';
+
+                fetch(csvUrl)
+                    .then(response => {
+                        if (!response.ok) throw new Error('Network response was not ok');
+                        return response.text();
+                    })
+                    .then(csvData => {
+                        Papa.parse(csvData, {
+                            header: true,
+                            complete: function (results) {
+                                originalData = results.data;
+                                processData(originalData);
+                                populateStateFilter(originalData);
+                                applyFilters();
+                            }
+                        });
+                    })
+                    .catch(error => console.error('Error fetching CSV data:', error))
+                    .finally(() => {
+                        loader.style.display = 'none';
+                    });
+            }
+
+            function processData(data) {
+                // Process the last four columns: divide them by 5
+                data.forEach(item => {
+                    const keys = Object.keys(item);
+                    for (let i = keys.length - 4; i < keys.length -1; i++) {
+                        const key = keys[i];
+                        if (item[key] && !isNaN(item[key])) {
+                            item[key] = (parseFloat(item[key]) / 5).toFixed(2);
+                        }
+                    }
+                });
+            }
+
+            function populateStateFilter(data) {
+                const stateColumnName = Object.keys(data[0])[0];
+                const states = [...new Set(data.map(item => item[stateColumnName]).filter(Boolean))];
+
+                stateFilter.innerHTML = '<option value="all">All States</option>';
+                states.forEach(state => {
+                    const option = document.createElement('option');
+                    option.value = state;
+                    option.textContent = state;
+                    stateFilter.appendChild(option);
+                });
+
+                stateFilter.value = selectedState;
+                populateDistrictFilter(originalData, selectedState);
+            }
+
+            function populateDistrictFilter(data, selectedState) {
+                const districtColumnName = Object.keys(data[0])[1];
+                const districts = [...new Set(data.filter(item => selectedState === 'all' || item[Object.keys(data[0])[0]] === selectedState).map(item => item[districtColumnName]).filter(Boolean))];
+
+                districtFilter.innerHTML = '<option value="all">All Districts</option>';
+                districts.forEach(district => {
+                    const option = document.createElement('option');
+                    option.value = district;
+                    option.textContent = district;
+                    districtFilter.appendChild(option);
+                });
+
+                districtFilter.disabled = districts.length === 0;
+                marketFilter.innerHTML = '<option value="all">All Markets</option>';
+                marketFilter.disabled = true;
+
+                districtFilter.value = selectedDistrict;
+                populateMarketFilter(originalData, selectedState, selectedDistrict);
+            }
+
+            function populateMarketFilter(data, selectedState, selectedDistrict) {
+                const marketColumnName = Object.keys(data[0])[2];
+                const markets = [...new Set(data.filter(item => (selectedState === 'all' || item[Object.keys(data[0])[0]] === selectedState) &&
+                    (selectedDistrict === 'all' || item[Object.keys(data[0])[1]] === selectedDistrict)).map(item => item[marketColumnName]).filter(Boolean))];
+
+                marketFilter.innerHTML = '<option value="all">All Markets</option>';
+                markets.forEach(market => {
+                    const option = document.createElement('option');
+                    option.value = market;
+                    option.textContent = market;
+                    marketFilter.appendChild(option);
+                });
+
+                marketFilter.disabled = markets.length === 0;
+            }
+
+            function applyFilters() {
+                filteredData = originalData.filter(item => {
+                    const stateMatch = selectedState === 'all' || item[Object.keys(item)[0]] === selectedState;
+                    const districtMatch = selectedDistrict === 'all' || item[Object.keys(item)[1]] === selectedDistrict;
+                    const marketMatch = selectedMarket === 'all' || item[Object.keys(item)[2]] === selectedMarket;
+                    return stateMatch && districtMatch && marketMatch;
+                });
+
+                populateTable(filteredData);
+            }
+
+            function populateTable(data) {
+                if (data.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="10" class="no-data">No data available for the selected filters.</td></tr>';
+                    return;
+                }
+
+                const headers = Object.keys(data[0]);
+                tableHeader.innerHTML = headers.map(key => `<th>${key}</th>`).join('');
+                tableBody.innerHTML = data.map(item => {
+                    return `<tr>${Object.values(item).map(value => `<td>${value}</td>`).join('')}</tr>`;
+                }).join('');
+            }
+
+            datePicker.addEventListener('change', function () {
+                fetchCSVData(this.value);
+            });
+
+            stateFilter.addEventListener('change', function () {
+                selectedState = this.value;
+                populateDistrictFilter(originalData, selectedState);
+                applyFilters();
+            });
+
+            districtFilter.addEventListener('change', function () {
+                selectedDistrict = this.value;
+                populateMarketFilter(originalData, selectedState, selectedDistrict);
+                applyFilters();
+            });
+
+            marketFilter.addEventListener('change', function () {
+                selectedMarket = this.value;
+                applyFilters();
+            });
+
+            setYesterdayDate();
+        });
+    </script>
+
+    <script type="text/javascript" src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+
+</body>
+</html>
