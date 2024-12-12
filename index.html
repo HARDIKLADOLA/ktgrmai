@@ -328,18 +328,27 @@
                 populateTable(filteredData);
             }
 
-            function populateTable(data) {
-                if (data.length === 0) {
-                    tableBody.innerHTML = '<tr><td colspan="10" class="no-data">No data available for the selected filters.</td></tr>';
-                    return;
-                }
+           function populateTable(data) {
+    if (data.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="10" class="no-data">No data available for the selected filters.</td></tr>';
+        return;
+    }
 
-                const headers = Object.keys(data[0]);
-                tableHeader.innerHTML = headers.map(key => `<th>${key}</th>`).join('');
-                tableBody.innerHTML = data.map(item => {
-                    return `<tr>${Object.values(item).map(value => `<td>${value}</td>`).join('')}</tr>`;
-                }).join('');
-            }
+    const headers = Object.keys(data[0]);
+
+    // Define the custom column order (2, 3, 7, 8, 4, 9, 6, 0, 1, 5, 10)
+    const columnOrder = [2, 3, 7, 9, 8, 4, 6, 0, 1, 5, 10];
+
+    // Reorder headers based on columnOrder
+    const orderedHeaders = columnOrder.map(index => headers[index]);
+    tableHeader.innerHTML = orderedHeaders.map(key => `<th>${key}</th>`).join('');
+
+    // Reorder table rows based on columnOrder
+    tableBody.innerHTML = data.map(item => {
+        return `<tr>${columnOrder.map(index => `<td>${item[headers[index]]}</td>`).join('')}</tr>`;
+    }).join('');
+}
+
 
             datePicker.addEventListener('change', function () {
                 fetchCSVData(this.value);
