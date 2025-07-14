@@ -1,381 +1,440 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSV Data Table with Cascading Filters</title>
-    <link href="https://fonts.googleapis.com/css2?family=Helvetica:wght@300;400;600&amp;display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Helvetica', sans-serif;
-            background-color: #f7f9fc;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-        }
-
-        h1 {
-            font-weight: 600;
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2.5em;
-        }
-
-        .filter-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .filter-container label {
-            font-weight: 600;
-            margin-right: 10px;
-            color: #34495e;
-        }
-
-        input[type="date"],
-        select {
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            margin: 10px 0;
-            width: 100%;
-            max-width: 320px;
-            transition: border 0.3s, box-shadow 0.3s;
-            font-size: 1em;
-        }
-
-        input[type="date"]:focus,
-        select:focus {
-            border-color: #3498db;
-            outline: none;
-            box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            border-radius: 8px;
-            background-color: #ffffff;
-            overflow: hidden;
-        }
-
-        th,
-        td {
-            padding: 12px;
-            border: 1px solid #ddd;
-            text-align: left;
-        }
-
-        th {
-            background-color: #3498db;
-            color: white;
-            font-weight: 600;
-        }
-
-        tr:nth-child(even) {
-            background-color: #f2f2f2;
-        }
-
-        tr:hover {
-            background-color: #eaeaea;
-        }
-
-        .no-data {
-            text-align: center;
-            padding: 20px;
-            color: #999;
-        }
-
-        #google_translate_element {
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .loader {
-            display: none;
-            position: fixed;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            border: 8px solid #f3f3f3;
-            border-top: 8px solid #3498db;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        @media screen and (min-width: 600px) {
-            .filter-container {
-                flex-direction: row;
-                justify-content: space-around;
-                flex-wrap: wrap;
-            }
-
-            input[type="date"],
-            select {
-                margin: 5px;
-                width: 200px;
-            }
-        }
-    </style>
-</head>
-<body>
-
-    <h1>CSV Data Table</h1>
-
-    <div id="google_translate_element"></div>
-
-    <div class="filter-container">
-        <label for="date-picker">Select a Date:</label>
-        <input type="date" id="date-picker">
-
-        <label for="state-filter">Filter by State:</label>
-        <select id="state-filter">
-            <option value="all">All States</option>
-        </select>
-
-        <label for="district-filter">Filter by District:</label>
-        <select id="district-filter" disabled="">
-            <option value="all">All Districts</option>
-        </select>
-
-        <label for="market-filter">Filter by Market:</label>
-        <select id="market-filter" disabled="">
-            <option value="all">All Markets</option>
-        </select>
-    </div>
-
-    <table id="data-table">
-        <thead>
-            <tr id="table-header"></tr>
-        </thead>
-        <tbody id="table-body"></tbody>
-    </table>
-
-    <div class="loader" id="loader"></div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
-    <script>
-        function googleTranslateElementInit() {
-            new google.translate.TranslateElement({
-                pageLanguage: 'en',
-                includedLanguages: 'en,hi,gu,kn,ml,mr,pa,ta,te,bn,or,as,ks,ur,sd',
-                layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
-                autoDisplay: false
-            }, 'google_translate_element');
-        }
-
-        function setDefaultLanguage() {
-            var interval = setInterval(function() {
-                if (typeof google !== "undefined" && google.translate) {
-                    var dropdown = document.querySelector('.goog-te-combo');
-                    if (dropdown) {
-                        dropdown.value = 'gu';
-                        dropdown.dispatchEvent(new Event('change'));
-                        clearInterval(interval);
-                    }
-                }
-            }, 100);
-        }
-
-        window.onload = function() {
-            setDefaultLanguage();
-        };
-
-        document.addEventListener('DOMContentLoaded', function () {
-            const datePicker = document.getElementById('date-picker');
-            const stateFilter = document.getElementById('state-filter');
-            const districtFilter = document.getElementById('district-filter');
-            const marketFilter = document.getElementById('market-filter');
-            const tableHeader = document.getElementById('table-header');
-            const tableBody = document.getElementById('table-body');
-            const loader = document.getElementById('loader');
-
-            let originalData = [];
-            let filteredData = [];
-            let selectedState = 'all';
-            let selectedDistrict = 'all';
-            let selectedMarket = 'all';
-
-            function setYesterdayDate() {
-                const today = new Date();
-                today.setDate(today.getDate() - 1);
-                const yesterday = today.toISOString().split('T')[0];
-                datePicker.value = yesterday;
-                fetchCSVData(yesterday);
-            }
-
-            function formatDate(date) {
-                const d = new Date(date);
-                const day = ('0' + d.getDate()).slice(-2);
-                const month = ('0' + (d.getMonth() + 1)).slice(-2);
-                const year = d.getFullYear();
-                return `${day}/${month}/${year}`;
-            }
-
-            function fetchCSVData(date) {
-                const formattedDate = formatDate(date);
-                const csvUrl = `https://api.data.gov.in/resource/35985678-0d79-46b4-9ed6-6f13308a1d24?api-key=579b464db66ec23bdd0000017185aa4a01fb494e47104dff02edf1ba&format=csv&limit=20000&filters%5BArrival_Date%5D=${encodeURIComponent(formattedDate)}`;
-
-                loader.style.display = 'block';
-
-                fetch(csvUrl)
-                    .then(response => {
-                        if (!response.ok) throw new Error('Network response was not ok');
-                        return response.text();
-                    })
-                    .then(csvData => {
-                        Papa.parse(csvData, {
-                            header: true,
-                            complete: function (results) {
-                                originalData = results.data;
-                                processData(originalData);
-                                populateStateFilter(originalData);
-                                applyFilters();
-                            }
-                        });
-                    })
-                    .catch(error => console.error('Error fetching CSV data:', error))
-                    .finally(() => {
-                        loader.style.display = 'none';
-                    });
-            }
-
-            function processData(data) {
-                // Process the last four columns: divide them by 5
-                data.forEach(item => {
-                    const keys = Object.keys(item);
-                    for (let i = keys.length - 4; i < keys.length -1; i++) {
-                        const key = keys[i];
-                        if (item[key] && !isNaN(item[key])) {
-                            item[key] = (parseFloat(item[key]) / 5).toFixed(2);
-                        }
-                    }
-                });
-            }
-
-            function populateStateFilter(data) {
-                const stateColumnName = Object.keys(data[0])[0];
-                const states = [...new Set(data.map(item => item[stateColumnName]).filter(Boolean))];
-
-                stateFilter.innerHTML = '<option value="all">All States</option>';
-                states.forEach(state => {
-                    const option = document.createElement('option');
-                    option.value = state;
-                    option.textContent = state;
-                    stateFilter.appendChild(option);
-                });
-
-                stateFilter.value = selectedState;
-                populateDistrictFilter(originalData, selectedState);
-            }
-
-            function populateDistrictFilter(data, selectedState) {
-                const districtColumnName = Object.keys(data[0])[1];
-                const districts = [...new Set(data.filter(item => selectedState === 'all' || item[Object.keys(data[0])[0]] === selectedState).map(item => item[districtColumnName]).filter(Boolean))];
-
-                districtFilter.innerHTML = '<option value="all">All Districts</option>';
-                districts.forEach(district => {
-                    const option = document.createElement('option');
-                    option.value = district;
-                    option.textContent = district;
-                    districtFilter.appendChild(option);
-                });
-
-                districtFilter.disabled = districts.length === 0;
-                marketFilter.innerHTML = '<option value="all">All Markets</option>';
-                marketFilter.disabled = true;
-
-                districtFilter.value = selectedDistrict;
-                populateMarketFilter(originalData, selectedState, selectedDistrict);
-            }
-
-            function populateMarketFilter(data, selectedState, selectedDistrict) {
-                const marketColumnName = Object.keys(data[0])[2];
-                const markets = [...new Set(data.filter(item => (selectedState === 'all' || item[Object.keys(data[0])[0]] === selectedState) &&
-                    (selectedDistrict === 'all' || item[Object.keys(data[0])[1]] === selectedDistrict)).map(item => item[marketColumnName]).filter(Boolean))];
-
-                marketFilter.innerHTML = '<option value="all">All Markets</option>';
-                markets.forEach(market => {
-                    const option = document.createElement('option');
-                    option.value = market;
-                    option.textContent = market;
-                    marketFilter.appendChild(option);
-                });
-
-                marketFilter.disabled = markets.length === 0;
-            }
-
-            function applyFilters() {
-                filteredData = originalData.filter(item => {
-                    const stateMatch = selectedState === 'all' || item[Object.keys(item)[0]] === selectedState;
-                    const districtMatch = selectedDistrict === 'all' || item[Object.keys(item)[1]] === selectedDistrict;
-                    const marketMatch = selectedMarket === 'all' || item[Object.keys(item)[2]] === selectedMarket;
-                    return stateMatch && districtMatch && marketMatch;
-                });
-
-                populateTable(filteredData);
-            }
-
-           function populateTable(data) {
-    if (data.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="10" class="no-data">No data available for the selected filters.</td></tr>';
-        return;
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>📈 Market Data Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    :root {
+      --bg: linear-gradient(180deg, #f7f7f9 0%, #e9ecef 100%);
+      --text: #1a1a1c;
+      --card: #ffffff;
+      --accent: #0066cc;
+      --shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+      --border: #e0e0e5;
+      --today: #90EE90;
+      --yesterday: #90EE90;
+      --button-bg: #f1f1f3;
+      --button-bg-hover: #e0e0e5;
+      --highlight: rgba(0, 102, 204, 0.1);
+    }
+    [data-theme="dark"] {
+      --bg: linear-gradient(180deg, #1e1e20 0%, #2a2a2c 100%);
+      --text: #f0f0f2;
+      --card: #2d2d30;
+      --accent: #3399ff;
+      --shadow: 0 6px 24px rgba(255, 255, 255, 0.1);
+      --border: #3a3a3c;
+      --button-bg: #3a3a3c;
+      --button-bg-hover: #4c4c4e;
+      --highlight: rgba(51, 153, 255, 0.15);
+      --today: #98FB98;
+      --yesterday: #98FB98;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: "Inter", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin: 20px 0;
+      text-align: center;
+      background: linear-gradient(45deg, var(--accent), var(--today));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .toolbar, .actions {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      width: 100%;
+      max-width: 1200px;
+      margin-bottom: 24px;
+      padding: 0 12px;
+    }
+    .toolbar input, .toolbar select, .toolbar button, .actions button {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--button-bg);
+      font-size: 0.95rem;
+      color: var(--text);
+      transition: all 0.3s;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .toolbar button.highlight-today,
+    .toolbar button.highlight-yesterday {
+      background: var(--today) !important;
+      color: #fff !important;
+    }
+    .toggle-switch {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 1000;
+    }
+    .toggle-switch input { display: none; }
+    .toggle-switch label {
+      display: flex;
+      width: 48px;
+      height: 24px;
+      background: var(--button-bg);
+      border-radius: 12px;
+      position: relative;
+      cursor: pointer;
+    }
+    .toggle-switch label::after {
+      content: '';
+      width: 20px;
+      height: 20px;
+      background: var(--accent);
+      border-radius: 50%;
+      position: absolute;
+      left: 2px;
+      transition: all 0.3s;
+    }
+    .toggle-switch input:checked + label::after {
+      left: calc(100% - 22px);
+      background: #fff;
+    }
+    #table-wrapper {
+      width: 100%;
+      max-width: 1200px;
+      overflow-x: auto;
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      background: var(--card);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+    th {
+      background: var(--accent);
+      color: #fff;
+      position: sticky;
+      top: 0;
+    }
+    tr:hover {
+      background: var(--highlight);
+      transform: scale(1.005);
+    }
+    #row-count {
+      font-size: 0.9rem;
+      opacity: 0.7;
+      text-align: center;
+      margin-top: 12px;
     }
 
-    const headers = Object.keys(data[0]);
+    .loader {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1000;
+    }
+    .emoji-ring {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: var(--card);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: spin 1.2s linear infinite;
+      font-size: 2rem;
+    }
+    @keyframes spin {
+      0%   { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="toggle-switch">
+    <input type="checkbox" id="darkToggle">
+    <label for="darkToggle"><span>🌙</span><span>☀️</span></label>
+  </div>
 
-    // Define the custom column order (2, 3, 7, 8, 4, 9, 6, 0, 1, 5, 10)
-    const columnOrder = [2, 3, 7, 9, 8, 4, 6, 0, 1, 5, 10];
+  <h1>📊 Market Data Dashboard</h1>
 
-    // Reorder headers based on columnOrder
-    const orderedHeaders = columnOrder.map(index => headers[index]);
-    tableHeader.innerHTML = orderedHeaders.map(key => `<th>${key}</th>`).join('');
+  <div class="toolbar">
+    <input type="date" id="date-picker" />
+    <button id="todayBtn">📅 Today</button>
+    <button id="yesterdayBtn">🕒 Yesterday</button>
+    <select id="state-filter"><option value="all">All States</option></select>
+    <select id="district-filter" disabled><option value="all">All Districts</option></select>
+    <select id="market-filter" disabled><option value="all">All Markets</option></select>
+    <input type="search" id="search" placeholder="🔍 Search markets..." />
+  </div>
 
-    // Reorder table rows based on columnOrder
-    tableBody.innerHTML = data.map(item => {
-        return `<tr>${columnOrder.map(index => `<td>${item[headers[index]]}</td>`).join('')}</tr>`;
-    }).join('');
-}
+  <div id="table-wrapper">
+    <table id="data-table">
+      <thead><tr id="table-header"></tr></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
 
+  <div class="actions">
+    <button onclick="copyTable()">📋 Copy Table</button>
+    <button onclick="downloadCSV()">⬇️ Download CSV</button>
+    <button onclick="downloadAsImage()">🖼️ Save as JPG</button>
+  </div>
+  <span id="row-count"></span>
 
-            datePicker.addEventListener('change', function () {
-                fetchCSVData(this.value);
-            });
+  <div class="loader" id="loader">
+    <div class="emoji-ring"><span id="loader-emoji">🥕</span></div>
+  </div>
 
-            stateFilter.addEventListener('change', function () {
-                selectedState = this.value;
-                populateDistrictFilter(originalData, selectedState);
-                applyFilters();
-            });
+  <script>
+    const loader = document.getElementById("loader");
+    const emojiSpan = document.getElementById("loader-emoji");
+    const rotatingEmojis = ["🥕", "🍅", "🥦", "🍆", "🌽", "🥒", "🍠", "🫑"];
+    let rotateInterval;
 
-            districtFilter.addEventListener('change', function () {
-                selectedDistrict = this.value;
-                populateMarketFilter(originalData, selectedState, selectedDistrict);
-                applyFilters();
-            });
+    const startEmojiLoader = () => {
+      loader.style.display = "block";
+      let i = 0;
+      rotateInterval = setInterval(() => {
+        emojiSpan.textContent = rotatingEmojis[i % rotatingEmojis.length];
+        i++;
+      }, 350);
+    };
 
-            marketFilter.addEventListener('change', function () {
-                selectedMarket = this.value;
-                applyFilters();
-            });
+    const stopEmojiLoader = () => {
+      clearInterval(rotateInterval);
+      loader.style.display = "none";
+    };
 
-            setYesterdayDate();
+    const datePicker = document.getElementById("date-picker");
+    const stateFilter = document.getElementById("state-filter");
+    const districtFilter = document.getElementById("district-filter");
+    const marketFilter = document.getElementById("market-filter");
+    const tableHeader = document.getElementById("table-header");
+    const tableBody = document.getElementById("table-body");
+    const search = document.getElementById("search");
+    const rowCount = document.getElementById("row-count");
+    const todayBtn = document.getElementById("todayBtn");
+    const yesterdayBtn = document.getElementById("yesterdayBtn");
+    const darkToggle = document.getElementById("darkToggle");
+
+    let originalData = [];
+
+    const formatDate = d => {
+      const date = new Date(d);
+      return `${("0" + date.getDate()).slice(-2)}/${("0" + (date.getMonth() + 1)).slice(-2)}/${date.getFullYear()}`;
+    };
+
+    const isToday = date => {
+      const today = new Date();
+      const selected = new Date(date);
+      return selected.toDateString() === today.toDateString();
+    };
+
+    const isYesterday = date => {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const selected = new Date(date);
+      return selected.toDateString() === yesterday.toDateString();
+    };
+
+    const updateButtonHighlights = date => {
+      todayBtn.classList.remove("highlight-today");
+      yesterdayBtn.classList.remove("highlight-yesterday");
+      if (isToday(date)) todayBtn.classList.add("highlight-today");
+      else if (isYesterday(date)) yesterdayBtn.classList.add("highlight-yesterday");
+    };
+
+    const fetchCSVData = async (date) => {
+      startEmojiLoader();
+      try {
+        const formatted = formatDate(date);
+        const url = `https://api.data.gov.in/resource/35985678-0d79-46b4-9ed6-6f13308a1d24?api-key=579b464db66ec23bdd0000017185aa4a01fb494e47104dff02edf1ba&format=csv&limit=20000&filters%5BArrival_Date%5D=${encodeURIComponent(formatted)}`;
+        const res = await fetch(url);
+        const csv = await res.text();
+        Papa.parse(csv, {
+          header: true,
+          complete: parsed => {
+            originalData = parsed.data.filter(row => Object.keys(row).length > 0);
+            processData(originalData);
+            populateFilters();
+            applyFilters();
+            updateButtonHighlights(date);
+          }
         });
-    </script>
+      } catch {
+        alert("⚠️ Failed to load data");
+      } finally {
+        stopEmojiLoader();
+      }
+    };
 
-    <script type="text/javascript" src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+    const processData = data => {
+      data.forEach(item => {
+        const keys = Object.keys(item);
+        for (let i = keys.length - 4; i < keys.length - 1; i++) {
+          if (!isNaN(item[keys[i]])) {
+            item[keys[i]] = (parseFloat(item[keys[i]]) / 5).toFixed(2);
+          }
+        }
+      });
+    };
 
+    const populateFilters = () => {
+      const keys = Object.keys(originalData[0] || {});
+      const sKey = keys[0];
+      const options = [...new Set(originalData.map(d => d[sKey]))].sort();
+      stateFilter.innerHTML = `<option value="all">All States</option>` + options.map(v => `<option>${v}</option>`).join("");
+      stateFilter.disabled = false;
+    };
+
+    const applyFilters = () => {
+      startEmojiLoader();
+      const sKey = Object.keys(originalData[0])[0];
+      const dKey = Object.keys(originalData[0])[1];
+      const mKey = Object.keys(originalData[0])[2];
+
+      const filtered = originalData.filter(row =>
+        (stateFilter.value === "all" || row[sKey] === stateFilter.value) &&
+        (districtFilter.value === "all" || row[dKey] === districtFilter.value) &&
+        (marketFilter.value === "all" || row[mKey] === marketFilter.value) &&
+        Object.values(row).some(val => val && val.toString().toLowerCase().includes(search.value.toLowerCase()))
+      );
+
+      const headers = Object.keys(originalData[0]);
+      const order = [2, 3, 7, 9, 8, 4, 6, 0, 1, 5];
+      tableHeader.innerHTML = order.map(i => `<th>${headers[i]}</th>`).join("");
+      tableBody.innerHTML = filtered.map(row =>
+        `<tr>${order.map(i => `<td>${row[headers[i]] || ""}</td>`).join("")}</tr>`
+      ).join("");
+      rowCount.textContent = `Showing ${filtered.length} rows`;
+      stopEmojiLoader();
+    };
+
+    stateFilter.onchange = () => {
+      const sKey = Object.keys(originalData[0])[0];
+      const dKey = Object.keys(originalData[0])[1];
+      const val = stateFilter.value;
+      const filtered = originalData.filter(row => val === 'all' || row[sKey] === val);
+      const districts = [...new Set(filtered.map(r => r[dKey]))].sort();
+      districtFilter.innerHTML = `<option value="all">All Districts</option>` + districts.map(d => `<option>${d}</option>`).join("");
+      districtFilter.disabled = false;
+      applyFilters();
+    };
+
+    districtFilter.onchange = () => {
+      const dKey = Object.keys(originalData[0])[1];
+      const mKey = Object.keys(originalData[0])[2];
+      const filtered = originalData.filter(row =>
+        row[dKey] === districtFilter.value
+      );
+      const markets = [...new Set(filtered.map(r => r[mKey]))].sort();
+      marketFilter.innerHTML = `<option value="all">All Markets</option>` + markets.map(d => `<option>${d}</option>`).join("");
+      marketFilter.disabled = false;
+      applyFilters();
+    };
+
+    marketFilter.onchange = search.oninput = applyFilters;
+
+    todayBtn.onclick = () => {
+      const d = new Date();
+      datePicker.value = d.toISOString().split("T")[0];
+      fetchCSVData(datePicker.value);
+    };
+
+    yesterdayBtn.onclick = () => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      datePicker.value = d.toISOString().split("T")[0];
+      fetchCSVData(datePicker.value);
+    };
+
+    datePicker.onchange = () => fetchCSVData(datePicker.value);
+
+    const copyTable = () => {
+      const rows = Array.from(document.querySelectorAll("#data-table tr")).map(r =>
+        Array.from(r.cells).map(c => c.textContent).join("\t")
+      ).join("\n");
+
+      try {
+        navigator.clipboard.writeText(rows).then(() => {
+          alert("✅ Copied to clipboard!");
+        }, () => {
+          fallbackCopy(rows);
+        });
+      } catch {
+        fallbackCopy(rows);
+      }
+
+      function fallbackCopy(text) {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+          document.execCommand("copy");
+          alert("✅ Copied using fallback!");
+        } catch {
+          alert("❌ Copy failed!");
+        }
+        document.body.removeChild(textarea);
+      }
+    };
+
+    const downloadCSV = () => {
+      const rows = Array.from(document.querySelectorAll("#data-table tr")).map(r =>
+        Array.from(r.cells).map(c => `"${c.textContent.replace(/"/g, '""')}"`).join(",")
+      ).join("\n");
+      const blob = new Blob([rows], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "market_data.csv";
+      a.click();
+    };
+
+    const downloadAsImage = () => {
+      startEmojiLoader();
+      html2canvas(document.getElementById("table-wrapper")).then(canvas => {
+        const link = document.createElement("a");
+        link.download = "market_data.jpg";
+        link.href = canvas.toDataURL("image/jpeg", 0.95);
+        link.click();
+        stopEmojiLoader();
+      });
+    };
+
+    darkToggle.onchange = () => {
+      document.documentElement.dataset.theme = darkToggle.checked ? "dark" : "light";
+    };
+
+    window.addEventListener("DOMContentLoaded", () => {
+      yesterdayBtn.click();
+    });
+  </script>
 </body>
 </html>
