@@ -7,6 +7,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" onerror="handleTranslateError()"></script>
   <style>
     :root {
       --bg: linear-gradient(180deg, #f7f7f9 0%, #e9ecef 100%);
@@ -124,13 +125,17 @@
     table {
       width: 100%;
       border-collapse: collapse;
+      table-layout: auto;
     }
     th, td {
       padding: 14px;
       text-align: left;
       border-bottom: 1px solid var(--border);
       font-size: 0.9rem;
-      white-space: nowrap;
+      white-space: normal;
+      word-wrap: break-word;
+      max-width: 100px;
+      min-width: 70px;
     }
     th {
       background: var(--accent);
@@ -148,7 +153,6 @@
       text-align: center;
       margin-top: 12px;
     }
-
     .loader {
       display: none;
       position: fixed;
@@ -173,6 +177,16 @@
       0%   { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+    #google_translate_element select {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--button-bg);
+      font-size: 0.95rem;
+      color: var(--text);
+      font-family: inherit;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -191,6 +205,7 @@
     <select id="district-filter" disabled><option value="all">All Districts</option></select>
     <select id="market-filter" disabled><option value="all">All Markets</option></select>
     <input type="search" id="search" placeholder="🔍 Search markets..." />
+    <div id="google_translate_element"></div>
   </div>
 
   <div id="table-wrapper">
@@ -275,20 +290,39 @@
       try {
         const formatted = formatDate(date);
         const url = `https://api.data.gov.in/resource/35985678-0d79-46b4-9ed6-6f13308a1d24?api-key=579b464db66ec23bdd0000017185aa4a01fb494e47104dff02edf1ba&format=csv&limit=20000&filters%5BArrival_Date%5D=${encodeURIComponent(formatted)}`;
-        const res = await fetch(url);
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/csv'
+          }
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP error! Status: ${res.status}`);
+        }
         const csv = await res.text();
         Papa.parse(csv, {
           header: true,
           complete: parsed => {
             originalData = parsed.data.filter(row => Object.keys(row).length > 0);
+            if (originalData.length === 0) {
+              alert("⚠️ No data available for the selected date");
+              tableBody.innerHTML = "";
+              rowCount.textContent = "Showing 0 rows";
+              return;
+            }
             processData(originalData);
             populateFilters();
             applyFilters();
             updateButtonHighlights(date);
+          },
+          error: (error) => {
+            console.error("Papa Parse error:", error);
+            alert("⚠️ Failed to parse CSV data");
           }
         });
-      } catch {
-        alert("⚠️ Failed to load data");
+      } catch (error) {
+        console.error("Fetch error:", error.message);
+        alert(`⚠️ Failed to load data: ${error.message}`);
       } finally {
         stopEmojiLoader();
       }
@@ -306,6 +340,7 @@
     };
 
     const populateFilters = () => {
+      if (originalData.length === 0) return;
       const keys = Object.keys(originalData[0] || {});
       const sKey = keys[0];
       const options = [...new Set(originalData.map(d => d[sKey]))].sort();
@@ -315,6 +350,12 @@
 
     const applyFilters = () => {
       startEmojiLoader();
+      if (originalData.length === 0) {
+        tableBody.innerHTML = "";
+        rowCount.textContent = "Showing 0 rows";
+        stopEmojiLoader();
+        return;
+      }
       const sKey = Object.keys(originalData[0])[0];
       const dKey = Object.keys(originalData[0])[1];
       const mKey = Object.keys(originalData[0])[2];
@@ -337,6 +378,7 @@
     };
 
     stateFilter.onchange = () => {
+      if (originalData.length === 0) return;
       const sKey = Object.keys(originalData[0])[0];
       const dKey = Object.keys(originalData[0])[1];
       const val = stateFilter.value;
@@ -348,6 +390,7 @@
     };
 
     districtFilter.onchange = () => {
+      if (originalData.length === 0) return;
       const dKey = Object.keys(originalData[0])[1];
       const mKey = Object.keys(originalData[0])[2];
       const filtered = originalData.filter(row =>
@@ -425,12 +468,34 @@
         link.href = canvas.toDataURL("image/jpeg", 0.95);
         link.click();
         stopEmojiLoader();
+      }).catch(error => {
+        console.error("html2canvas error:", error);
+        alert("⚠️ Failed to generate image");
+        stopEmojiLoader();
       });
     };
 
     darkToggle.onchange = () => {
       document.documentElement.dataset.theme = darkToggle.checked ? "dark" : "light";
     };
+
+    function googleTranslateElementInit() {
+      if (typeof google !== 'undefined' && google.translate) {
+        new google.translate.TranslateElement({
+          pageLanguage: 'en',
+          includedLanguages: 'hi,bn,ta,te,mr,gu,kn,ml,pa,or',
+          layout: google.translate.TranslateElement.InlineLayout.SIMPLE
+        }, 'google_translate_element');
+      } else {
+        console.error("Google Translate API not available");
+        document.getElementById("google_translate_element").innerHTML = "<span>⚠️ Translation unavailable</span>";
+      }
+    }
+
+    function handleTranslateError() {
+      console.error("Failed to load Google Translate script");
+      document.getElementById("google_translate_element").innerHTML = "<span>⚠️ Translation unavailable</span>";
+    }
 
     window.addEventListener("DOMContentLoaded", () => {
       yesterdayBtn.click();
